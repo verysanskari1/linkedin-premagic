@@ -164,6 +164,7 @@ def run(args: argparse.Namespace) -> int:
         return 2
 
     df = pd.read_excel(in_path)
+    df.columns = [str(c).strip() for c in df.columns]  # tolerate trailing/leading spaces
     for col in (args.name_col, args.company_col):
         if col not in df.columns:
             print(

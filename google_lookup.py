@@ -242,6 +242,7 @@ def run(args: argparse.Namespace) -> int:
         return 2
 
     df = pd.read_excel(in_path)
+    df.columns = [str(c).strip() for c in df.columns]  # tolerate trailing/leading spaces
     if args.name_col not in df.columns:
         print(f"ERROR: name column '{args.name_col}' not found. "
               f"Columns: {list(df.columns)}", file=sys.stderr)
