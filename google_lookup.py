@@ -125,17 +125,20 @@ def score_candidate(
     comp_toks = [t for t in tokens(company) if t not in STOPWORDS and len(t) > 1]
     if comp_toks:
         if any(t in title_n for t in comp_toks):
-            score += 40                  # company in title = very strong corroboration
+            score += 45                  # company in title = very strong corroboration
         elif any(t in blob_n for t in comp_toks):
-            score += 25                  # company only in snippet
+            score += 30                  # company only in snippet
         # company given but NOT found anywhere -> no points (stays <= name-only)
     else:
         score += 10                      # no company to check; don't over-penalize
 
     # --- designation: small corroborating boost ---
+    # Kept low (5) on purpose: a generic title like "Manager"/"Director" must
+    # NOT, together with a name match alone, clear the threshold when the
+    # company doesn't match -- company stays the real disambiguator.
     desg_toks = [t for t in tokens(designation) if t not in STOPWORDS and len(t) > 2]
     if desg_toks and any(t in blob_n for t in desg_toks):
-        score += 10
+        score += 5
 
     return min(score, 100)
 
@@ -160,24 +163,13 @@ def search_google_cse(api_key: str, cx: str, query: str,
              "snippet": it.get("snippet", "")} for it in items]
 
 
-def resolve_profile(backend_call, name, company, title, min_score) -> LookupResult:
-    """Search + verify a single person. ``backend_call`` takes a query string."""
-    parts = [f'"{name}"']
-    if company:
-        parts.append(f'"{company}"')
-    parts.append("site:linkedin.com/in")
-    query = " ".join(parts)
-
+def _search_candidates(backend_call, query, name, company, title):
+    """Run one query; return the best-scored LinkedIn candidate, or None."""
     try:
         results = backend_call(query)
-    except requests.RequestException as exc:
-        # Retry once with a looser query (company unquoted) before giving up.
-        try:
-            results = backend_call(f'{name} {company} site:linkedin.com/in')
-        except requests.RequestException:
-            return LookupResult(lookup_status=f"error: {exc}")
-
-    best: Optional[LookupResult] = None
+    except requests.RequestException:
+        return "error"
+    best = None
     for item in results:
         link = item.get("link", "")
         if "linkedin.com/in/" not in link.lower():
@@ -193,12 +185,39 @@ def resolve_profile(backend_call, name, company, title, min_score) -> LookupResu
                 match_score=sc,
                 matched_title=item.get("title", ""),
             )
-
-    if best is None:
-        return LookupResult(lookup_status="not_found")
-
-    best.lookup_status = "matched" if best.match_score >= min_score else "low_confidence"
     return best
+
+
+def resolve_profile(backend_call, name, company, title, min_score) -> LookupResult:
+    """Search + verify a single person, escalating to looser queries on a miss.
+
+    We try increasingly relaxed queries and stop at the first that returns any
+    LinkedIn profile. This rescues people whose company on LinkedIn differs from
+    the spreadsheet (e.g. 'Hewlett Packard' vs 'HPE', 'HCL Tech' vs 'HCLTech').
+    The company is still scored, so a profile found only via the relaxed query
+    typically lands as ``low_confidence`` for you to confirm -- never silently
+    accepted as a wrong match.
+    """
+    queries = [f'"{name}" "{company}" site:linkedin.com/in'] if company else []
+    if company:
+        queries.append(f'"{name}" {company} site:linkedin.com/in')  # company unquoted
+    queries.append(f'"{name}" site:linkedin.com/in')                 # name only (recall)
+
+    last_error = False
+    for query in queries:
+        best = _search_candidates(backend_call, query, name, company, title)
+        if best == "error":
+            last_error = True
+            continue
+        if best is not None:
+            best.lookup_status = (
+                "matched" if best.match_score >= min_score else "low_confidence"
+            )
+            return best
+
+    if last_error:
+        return LookupResult(lookup_status="error: search request failed")
+    return LookupResult(lookup_status="not_found")
 
 
 def load_cache(path: Optional[Path]) -> dict:
@@ -254,6 +273,7 @@ def run(args: argparse.Namespace) -> int:
 
     cache_path = Path(args.cache) if args.cache else None
     cache = load_cache(cache_path)
+    retry_statuses = {s.strip() for s in args.retry.split(",") if s.strip()}
 
     results: list[dict] = []
     matched = low = missing = errored = 0
@@ -270,8 +290,12 @@ def run(args: argparse.Namespace) -> int:
             continue
 
         cache_key = f"{name}|{company}|{title}".lower()
-        if cache_key in cache:
-            res_dict = cache[cache_key]
+        cached = cache.get(cache_key)
+        # Re-run if not cached, or if the cached status is one we were asked to retry.
+        cached_status = (cached or {}).get("lookup_status", "")
+        force = any(cached_status.startswith(s) for s in retry_statuses) if retry_statuses else False
+        if cached is not None and not force:
+            res_dict = cached
         else:
             res = resolve_profile(backend_call, name, company, title, args.min_score)
             res_dict = asdict(res)
@@ -314,6 +338,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Search backend. 'serper' (default) or official 'google' CSE.")
     p.add_argument("--min-score", type=int, default=60,
                    help="Accept matches at/above this confidence score (0-100).")
+    p.add_argument("--retry", default="",
+                   help="Comma list of cached statuses to RE-RUN, ignoring the "
+                        "cache, e.g. --retry not_found,error or --retry low_confidence. "
+                        "Use after improving the script or fixing company names.")
     p.add_argument("--sleep", type=float, default=0.5,
                    help="Seconds between searches.")
     p.add_argument("--cache", default=".google_lookup_cache.json",
