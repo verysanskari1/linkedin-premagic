@@ -1,0 +1,7 @@
+# lookup caches & generated output
+.google_lookup_cache.json
+.lookup_cache.json
+output.xlsx
+*.pyc
+__pycache__/
+.venv/
