@@ -128,6 +128,10 @@ def run(args: argparse.Namespace) -> int:
     has_url = args.url_col in df.columns
     has_company = args.company_col in df.columns
 
+    if args.limit and args.limit > 0:
+        df = df.head(args.limit).copy()
+        print(f"(test mode) processing only the first {len(df)} rows\n")
+
     out_dir = Path(args.out_dir)
     session = requests.Session()
 
@@ -214,6 +218,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--name-col", default="Name")
     p.add_argument("--company-col", default="Company")
     p.add_argument("--out-dir", default="photos", help="Folder to save photos in.")
+    p.add_argument("--limit", type=int, default=0,
+                   help="Only process the first N rows (for a test run). 0 = all.")
     p.add_argument("--sleep", type=float, default=0.5,
                    help="Seconds between people.")
     return p
