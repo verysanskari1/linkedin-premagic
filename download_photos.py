@@ -128,7 +128,10 @@ def run(args: argparse.Namespace) -> int:
         print(f"ERROR: input file not found: {in_path}", file=sys.stderr)
         return 2
 
-    df = pd.read_excel(in_path)
+    if in_path.suffix.lower() in (".csv", ".txt"):
+        df = pd.read_csv(in_path, dtype=str)
+    else:
+        df = pd.read_excel(in_path, dtype=str)
     df.columns = [str(c).strip() for c in df.columns]
     if args.name_col not in df.columns:
         print(f"ERROR: name column '{args.name_col}' not found. "
