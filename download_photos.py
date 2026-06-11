@@ -142,6 +142,7 @@ def run(args: argparse.Namespace) -> int:
         print(f"(test mode) processing only the first {len(df)} rows\n")
 
     out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
     session = requests.Session()
     if args.insecure:
         session.verify = False
@@ -223,6 +224,8 @@ def run(args: argparse.Namespace) -> int:
     # Backend CSV: image,name,company -- only rows that actually have a photo.
     # Every value is quoted so commas/apostrophes/accents never break parsing.
     out_csv = Path(args.csv)
+    if out_csv.parent != Path(""):
+        out_csv.parent.mkdir(parents=True, exist_ok=True)
     with out_csv.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh, quoting=csv.QUOTE_ALL)
         writer.writerow(["image", "name", "company"])

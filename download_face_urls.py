@@ -94,6 +94,7 @@ def run(args: argparse.Namespace) -> int:
         print(f"(test mode) processing only the first {len(df)} rows\n")
 
     out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)   # create up front so outputs can write even if all downloads fail
     session = requests.Session()
     if args.insecure:
         session.verify = False
@@ -138,17 +139,22 @@ def run(args: argparse.Namespace) -> int:
             downloaded += 1
             print(f"[{i + 1}/{total}] {name} -> {dest}")
         except (requests.RequestException, OSError) as exc:
-            statuses.append(f"download_failed: {str(exc)[:80]}"); files.append("")
+            statuses.append(f"download_failed: {str(exc)[:200]}"); files.append("")
             failed += 1
-            print(f"[{i + 1}/{total}] {name} -> FAILED: {str(exc)[:80]}")
+            print(f"[{i + 1}/{total}] {name} -> FAILED: {str(exc)[:300]}")
 
         time.sleep(args.sleep)
 
     df[COL_STATUS] = statuses
     df[COL_FILE] = files
-    df.to_excel(Path(args.output), index=False)
+    out_report = Path(args.output)
+    if out_report.parent != Path(""):
+        out_report.parent.mkdir(parents=True, exist_ok=True)
+    df.to_excel(out_report, index=False)
 
     out_csv = Path(args.csv)
+    if out_csv.parent != Path(""):
+        out_csv.parent.mkdir(parents=True, exist_ok=True)
     with out_csv.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh, quoting=csv.QUOTE_ALL)
         writer.writerow(["image", "name", "company"])
