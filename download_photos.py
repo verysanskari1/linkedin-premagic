@@ -34,6 +34,7 @@ Notes
 from __future__ import annotations
 
 import argparse
+import csv
 import os
 import re
 import sys
@@ -136,6 +137,8 @@ def run(args: argparse.Namespace) -> int:
     session = requests.Session()
 
     statuses, sources, files = [], [], []
+    csv_rows = []          # (image_filename, real_name, real_company) for the backend CSV
+    seen: dict[str, int] = {}   # ensure unique filenames within this run
     downloaded = no_result = failed = skipped = 0
     total = len(df)
 
@@ -144,7 +147,12 @@ def run(args: argparse.Namespace) -> int:
         company = str(row[args.company_col]).strip() if has_company and pd.notna(row[args.company_col]) else ""
         url = str(row[args.url_col]).strip() if has_url and pd.notna(row[args.url_col]) else ""
 
+        # Build a UNIQUE filename: two people with the same name+company get _2, _3 ...
         filename = build_filename(name, company)
+        stem = filename[:-4]
+        seen[stem] = seen.get(stem, 0) + 1
+        if seen[stem] > 1:
+            filename = f"{stem}_{seen[stem]}.png"
         dest = out_dir / filename
 
         # Build the search query: the LinkedIn URL if we have one, else name+company.
@@ -160,6 +168,7 @@ def run(args: argparse.Namespace) -> int:
         # Skip if already downloaded (cheap re-runs).
         if dest.exists():
             statuses.append("downloaded"); sources.append("(cached file)"); files.append(str(dest))
+            csv_rows.append((filename, name, company))
             downloaded += 1
             print(f"[{i + 1}/{total}] {filename} -> already exists, skip")
             continue
@@ -183,6 +192,7 @@ def run(args: argparse.Namespace) -> int:
         try:
             download_as_png(image_url, dest, session)
             statuses.append("downloaded"); sources.append(image_url); files.append(str(dest))
+            csv_rows.append((filename, name, company))
             downloaded += 1
             print(f"[{i + 1}/{total}] {name} -> {dest}")
         except (requests.RequestException, OSError) as exc:
@@ -198,12 +208,22 @@ def run(args: argparse.Namespace) -> int:
     out_report = Path(args.output)
     df.to_excel(out_report, index=False)
 
+    # Backend CSV: image,name,company -- only rows that actually have a photo.
+    # Every value is quoted so commas/apostrophes/accents never break parsing.
+    out_csv = Path(args.csv)
+    with out_csv.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.writer(fh, quoting=csv.QUOTE_ALL)
+        writer.writerow(["image", "name", "company"])
+        for image_name, real_name, real_company in csv_rows:
+            writer.writerow([image_name, real_name, real_company])
+
     print("\n=== Summary ===")
     print(f"  downloaded:      {downloaded}")
     print(f"  no image result: {no_result}")
     print(f"  failed/errors:   {failed}")
     print(f"  skipped:         {skipped}")
     print(f"  photos saved to: {out_dir}/")
+    print(f"  backend CSV:     {out_csv}  ({len(csv_rows)} rows)")
     print(f"  report written:  {out_report}")
     return 0
 
@@ -218,6 +238,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--name-col", default="Name")
     p.add_argument("--company-col", default="Company")
     p.add_argument("--out-dir", default="photos", help="Folder to save photos in.")
+    p.add_argument("--csv", default="attendees.csv",
+                   help="Backend CSV (image,name,company) listing every saved photo.")
     p.add_argument("--limit", type=int, default=0,
                    help="Only process the first N rows (for a test run). 0 = all.")
     p.add_argument("--sleep", type=float, default=0.5,

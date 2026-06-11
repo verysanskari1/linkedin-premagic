@@ -92,6 +92,11 @@ python download_photos.py output1.xlsx \
 ```
 
 - Photos are saved into `--out-dir` (default `photos/`).
+- A backend **CSV** (`--csv`, default `attendees.csv`) is written with exactly
+  three columns — `image,name,company` — where `image` is the exact saved
+  filename and every value is quoted (so commas/apostrophes are safe). Only
+  people with a downloaded photo are listed, so each `image` always matches a
+  real file. Filenames are de-duplicated (`john_smith.png`, `john_smith_2.png`).
 - A report `.xlsx` is written with `image_status` (`downloaded` / `no_result` /
   `download_failed` / `error`), `image_source` (the image URL used) and
   `image_file` columns.
