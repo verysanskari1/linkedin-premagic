@@ -46,6 +46,14 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+# On corporate networks that intercept HTTPS, use the OS trust store so SSL
+# verification still works (the company root cert is already trusted there).
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except Exception:
+    pass
+
 try:
     from PIL import Image
 except ImportError:
@@ -135,6 +143,10 @@ def run(args: argparse.Namespace) -> int:
 
     out_dir = Path(args.out_dir)
     session = requests.Session()
+    if args.insecure:
+        session.verify = False
+        requests.packages.urllib3.disable_warnings()  # type: ignore
+        print("(insecure mode) SSL certificate verification disabled\n")
 
     statuses, sources, files = [], [], []
     csv_rows = []          # (image_filename, real_name, real_company) for the backend CSV
@@ -244,6 +256,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Only process the first N rows (for a test run). 0 = all.")
     p.add_argument("--sleep", type=float, default=0.5,
                    help="Seconds between people.")
+    p.add_argument("--insecure", action="store_true",
+                   help="Disable SSL verification (last resort for corporate "
+                        "HTTPS-inspecting proxies).")
     return p
 
 

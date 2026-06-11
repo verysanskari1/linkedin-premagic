@@ -58,6 +58,14 @@ from typing import Optional
 import pandas as pd
 import requests
 
+# On corporate networks that intercept HTTPS, use the OS trust store so SSL
+# verification still works (the company root cert is already trusted there).
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except Exception:
+    pass
+
 SERPER_URL = "https://google.serper.dev/search"
 GOOGLE_CSE_URL = "https://www.googleapis.com/customsearch/v1"
 
@@ -237,6 +245,10 @@ def save_cache(path: Optional[Path], cache: dict) -> None:
 def make_backend(args) -> tuple:
     """Return (callable taking query -> results, session)."""
     session = requests.Session()
+    if getattr(args, "insecure", False):
+        session.verify = False
+        requests.packages.urllib3.disable_warnings()  # type: ignore
+        print("(insecure mode) SSL certificate verification disabled")
     if args.backend == "serper":
         key = os.environ.get("SERPER_API_KEY", "").strip()
         if not key:
@@ -346,6 +358,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Seconds between searches.")
     p.add_argument("--cache", default=".google_lookup_cache.json",
                    help="Cache file to avoid repeat charges. Pass '' to disable.")
+    p.add_argument("--insecure", action="store_true",
+                   help="Disable SSL verification (last resort for corporate "
+                        "HTTPS-inspecting proxies).")
     return p
 
 
