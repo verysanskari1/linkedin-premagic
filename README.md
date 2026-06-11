@@ -78,6 +78,28 @@ of 60 — so a same-name-but-different-company person is flagged for review
 instead of being wrongly accepted. Raise `--min-score` for stricter matching,
 lower it for more (riskier) hits.
 
+## Downloading profile photos (`download_photos.py`)
+
+After you have a sheet with a `linkedin_url` column (e.g. the output of
+`google_lookup.py`), download each person's photo. It searches the LinkedIn URL
+in Google Images and saves the **first result** as `firstname_secondname_company.png`.
+
+```bash
+export SERPER_API_KEY="your_key"
+python download_photos.py output1.xlsx \
+    --url-col linkedin_url --name-col Name --company-col "Company Name" \
+    --out-dir photos -o photos_report.xlsx
+```
+
+- Photos are saved into `--out-dir` (default `photos/`).
+- A report `.xlsx` is written with `image_status` (`downloaded` / `no_result` /
+  `download_failed` / `error`), `image_source` (the image URL used) and
+  `image_file` columns.
+- The first image result is usually the right person but **not guaranteed** for
+  common names — spot-check, and review any row that isn't `downloaded`.
+- Already-saved files are skipped, so re-runs are cheap. Each lookup is ~1
+  Serper image credit.
+
 ## Notes
 
 - Results are cached (`.google_lookup_cache.json` / `.lookup_cache.json`) so

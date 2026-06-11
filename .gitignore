@@ -5,3 +5,6 @@ output.xlsx
 *.pyc
 __pycache__/
 .venv/
+
+photos/
+photos_report.xlsx
