@@ -172,11 +172,16 @@ def search_google_cse(api_key: str, cx: str, query: str,
 
 
 def _search_candidates(backend_call, query, name, company, title):
-    """Run one query; return the best-scored LinkedIn candidate, or None."""
+    """Run one query; return the best-scored LinkedIn candidate, None, or a
+    ('error', message) tuple describing why the request failed."""
     try:
         results = backend_call(query)
-    except requests.RequestException:
-        return "error"
+    except requests.HTTPError as exc:
+        code = exc.response.status_code if exc.response is not None else "?"
+        body = (exc.response.text[:120] if exc.response is not None else "")
+        return ("error", f"HTTP {code} {body}")
+    except requests.RequestException as exc:
+        return ("error", f"{type(exc).__name__}: {str(exc)[:120]}")
     best = None
     for item in results:
         link = item.get("link", "")
@@ -211,11 +216,11 @@ def resolve_profile(backend_call, name, company, title, min_score) -> LookupResu
         queries.append(f'"{name}" {company} site:linkedin.com/in')  # company unquoted
     queries.append(f'"{name}" site:linkedin.com/in')                 # name only (recall)
 
-    last_error = False
+    last_error = ""
     for query in queries:
         best = _search_candidates(backend_call, query, name, company, title)
-        if best == "error":
-            last_error = True
+        if isinstance(best, tuple) and best[0] == "error":
+            last_error = best[1]
             continue
         if best is not None:
             best.lookup_status = (
@@ -224,7 +229,7 @@ def resolve_profile(backend_call, name, company, title, min_score) -> LookupResu
             return best
 
     if last_error:
-        return LookupResult(lookup_status="error: search request failed")
+        return LookupResult(lookup_status=f"error: {last_error}")
     return LookupResult(lookup_status="not_found")
 
 
