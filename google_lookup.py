@@ -297,6 +297,7 @@ def run(args: argparse.Namespace) -> int:
 
     results: list[dict] = []
     matched = low = missing = errored = 0
+    error_samples: dict[str, int] = {}
     total = len(df)
 
     for i, row in df.iterrows():
@@ -327,7 +328,9 @@ def run(args: argparse.Namespace) -> int:
         matched += status == "matched"
         low += status == "low_confidence"
         missing += status == "not_found"
-        errored += status.startswith("error")
+        if status.startswith("error"):
+            errored += 1
+            error_samples[status] = error_samples.get(status, 0) + 1
 
         results.append(res_dict)
         print(f"[{i + 1}/{total}] {name} @ {company or '?'} -> {status} "
@@ -342,6 +345,14 @@ def run(args: argparse.Namespace) -> int:
     print(f"  low_confidence (review):    {low}")
     print(f"  not_found:                  {missing}")
     print(f"  errors:                     {errored}")
+    if error_samples:
+        print("  most common error(s):")
+        for msg, n in sorted(error_samples.items(), key=lambda kv: -kv[1])[:3]:
+            print(f"    {n}x  {msg}")
+        if any(s in m for m in error_samples for s in ("429", "credit", "402")):
+            print("  -> looks like Serper rate-limit / out of credits. "
+                  "Check https://serper.dev dashboard.")
+        print("  (these errors are cached; re-run with --retry error to redo them.)")
     print(f"  written to:                 {out_path}")
     return 0
 
